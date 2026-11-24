@@ -24,9 +24,13 @@ type HistoryEvent = {
   message: string;
 };
 
-const API_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
-).replace(/\/$/, "");
+const DEFAULT_API_BASE_URL = import.meta.env.PROD
+  ? "https://sistema-de-semaforos-backend.onrender.com"
+  : "http://localhost:8000";
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL).replace(
+  /\/$/,
+  "",
+);
 
 const colorNames: Record<Color, string> = {
   red: "Rojo",
