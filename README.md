@@ -7,7 +7,7 @@ automático. El administrador puede ajustar la pausa con ambos semáforos en roj
 (1–60 segundos) desde el modo manual. El ESP32 detecta vehículos a 15 cm o menos.
 En la vista de administrador también se pueden consultar las detecciones
 acumuladas por semáforo desde el último reinicio del backend.
-En producción, la web usa el backend de Render si `VITE_API_BASE_URL` no está
-configurada.
+La web usa el backend de Render si `VITE_API_BASE_URL` no está configurada. Para
+usar un backend local, establece `VITE_API_BASE_URL=http://localhost:8000`.
 
 No usar para controlar tráfico real.
