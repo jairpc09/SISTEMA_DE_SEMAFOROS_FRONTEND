@@ -9,6 +9,7 @@ type StateResponse = {
   detected: Record<SemaphoreId, boolean>;
   semaphores: Record<SemaphoreId, Color>;
 };
+type Role = "user" | "admin";
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
@@ -29,6 +30,16 @@ async function getState(): Promise<StateResponse> {
 }
 
 function App() {
+  const [role, setRole] = useState<Role | null>(() =>
+    sessionStorage.getItem("semaphore-role") === "admin" ||
+    sessionStorage.getItem("semaphore-role") === "user"
+      ? (sessionStorage.getItem("semaphore-role") as Role)
+      : null,
+  );
+  const [selectedRole, setSelectedRole] = useState<Role>("user");
+  const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
   const [semaphores, setSemaphores] = useState<StateResponse["semaphores"]>();
   const [mode, setMode] = useState<Mode>();
   const [detected, setDetected] = useState<StateResponse["detected"]>();
@@ -51,10 +62,57 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!role) return;
     void refresh();
     const timer = window.setInterval(() => void refresh(), 500);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, role]);
+
+  async function login() {
+    setLoginBusy(true);
+    setLoginError("");
+    try {
+      if (selectedRole === "admin") {
+        const response = await fetch(`${API_BASE_URL}/api/admin/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (!response.ok) {
+          throw new Error(
+            response.status === 401
+              ? "Contraseña de administrador incorrecta."
+              : `No se pudo iniciar sesión (HTTP ${response.status})`,
+          );
+        }
+        const result = (await response.json()) as { token: string };
+        sessionStorage.setItem("semaphore-admin-token", result.token);
+      } else {
+        sessionStorage.removeItem("semaphore-admin-token");
+      }
+
+      sessionStorage.setItem("semaphore-role", selectedRole);
+      setPassword("");
+      setRole(selectedRole);
+    } catch (reason) {
+      setLoginError(
+        reason instanceof Error ? reason.message : "Error al iniciar sesión",
+      );
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  function logout() {
+    sessionStorage.removeItem("semaphore-role");
+    sessionStorage.removeItem("semaphore-admin-token");
+    setRole(null);
+  }
+
+  function adminAuthorizationHeader(): Record<string, string> {
+    const token = sessionStorage.getItem("semaphore-admin-token");
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
 
   async function changeMode(nextMode: Mode) {
     setModeBusy(true);
@@ -62,7 +120,10 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/mode`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...adminAuthorizationHeader(),
+        },
         body: JSON.stringify({ mode: nextMode }),
       });
       if (!response.ok) {
@@ -84,7 +145,10 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/api/semaphores/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...adminAuthorizationHeader(),
+        },
         body: JSON.stringify({ color }),
       });
       if (!response.ok) {
@@ -105,15 +169,93 @@ function App() {
     }
   }
 
+  if (!role) {
+    return (
+      <main className="login-page">
+        <section className="login-card" aria-label="Inicio de sesión">
+          <p className="eyebrow">PROTOTIPO EDUCATIVO · ESP32</p>
+          <h1>Control de semáforos</h1>
+          <p className="subtitle">Selecciona el tipo de acceso.</p>
+
+          <div className="role-options" role="radiogroup" aria-label="Rol">
+            <button
+              className={`role-button ${selectedRole === "user" ? "selected" : ""}`}
+              type="button"
+              role="radio"
+              aria-checked={selectedRole === "user"}
+              onClick={() => {
+                setSelectedRole("user");
+                setPassword("");
+                setLoginError("");
+              }}
+            >
+              Usuario
+              <span>Solo consulta el estado</span>
+            </button>
+            <button
+              className={`role-button ${selectedRole === "admin" ? "selected" : ""}`}
+              type="button"
+              role="radio"
+              aria-checked={selectedRole === "admin"}
+              onClick={() => {
+                setSelectedRole("admin");
+                setLoginError("");
+              }}
+            >
+              Administrador
+              <span>Controla los semáforos</span>
+            </button>
+          </div>
+
+          {selectedRole === "admin" && (
+            <label className="password-field">
+              Contraseña
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void login();
+                }}
+                placeholder="Ingresa la contraseña"
+                autoComplete="current-password"
+              />
+            </label>
+          )}
+
+          {loginError && <p className="error" role="alert">{loginError}</p>}
+
+          <button
+            className="login-button"
+            type="button"
+            disabled={loginBusy}
+            onClick={() => void login()}
+          >
+            {loginBusy ? "Ingresando…" : "Entrar"}
+          </button>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="page">
-      <header>
-        <p className="eyebrow">PROTOTIPO EDUCATIVO · ESP32</p>
-        <h1>Control de semáforos</h1>
-        <p className="subtitle">
-          En automático, los sensores detectan vehículos; en manual, puedes elegir
-          los colores desde esta página.
-        </p>
+      <header className="app-header">
+        <div>
+          <p className="eyebrow">PROTOTIPO EDUCATIVO · ESP32</p>
+          <h1>Control de semáforos</h1>
+          <p className="subtitle">
+            {role === "admin"
+              ? "En automático, los sensores detectan vehículos; en manual, puedes elegir los colores."
+              : "Vista de consulta: puedes revisar el estado de los semáforos y los sensores."}
+          </p>
+        </div>
+        <div className="account-controls">
+          <span className="role-badge">{role === "admin" ? "Administrador" : "Usuario"}</span>
+          <button className="logout-button" type="button" onClick={logout}>
+            Cerrar sesión
+          </button>
+        </div>
       </header>
 
       {error && <p className="error" role="alert">{error}</p>}
@@ -129,22 +271,24 @@ function App() {
                 : "Conectando con el backend…"}
           </p>
         </div>
-        <div className="controls">
-          <button
-            className={`button mode-button ${mode === "manual" ? "selected" : ""}`}
-            disabled={!mode || modeBusy || mode === "manual"}
-            onClick={() => void changeMode("manual")}
-          >
-            Manual
-          </button>
-          <button
-            className={`button mode-button ${mode === "automatic" ? "selected" : ""}`}
-            disabled={!mode || modeBusy || mode === "automatic"}
-            onClick={() => void changeMode("automatic")}
-          >
-            Automático
-          </button>
-        </div>
+        {role === "admin" && (
+          <div className="controls">
+            <button
+              className={`button mode-button ${mode === "manual" ? "selected" : ""}`}
+              disabled={!mode || modeBusy || mode === "manual"}
+              onClick={() => void changeMode("manual")}
+            >
+              Manual
+            </button>
+            <button
+              className={`button mode-button ${mode === "automatic" ? "selected" : ""}`}
+              disabled={!mode || modeBusy || mode === "automatic"}
+              onClick={() => void changeMode("automatic")}
+            >
+              Automático
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="grid" aria-label="Semáforos">
@@ -174,7 +318,7 @@ function App() {
                   Sensor: {detected?.[id] ? "vehículo detectado" : "sin detección"}
                 </p>
               )}
-              <div className="controls" aria-label={`Cambiar semáforo ${id}`}>
+              {role === "admin" && <div className="controls" aria-label={`Cambiar semáforo ${id}`}>
                 {(["red", "yellow", "green"] as const).map((lamp) => {
                   const blockedByOtherSemaphore =
                     lamp !== "red" &&
@@ -202,7 +346,7 @@ function App() {
                     </button>
                   );
                 })}
-              </div>
+              </div>}
             </article>
           );
         })}

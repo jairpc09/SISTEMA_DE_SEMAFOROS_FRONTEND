@@ -41,6 +41,125 @@ button:focus-visible {
   padding: 72px 0 36px;
 }
 
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: min(500px, 100%);
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: linear-gradient(155deg, rgba(23, 37, 48, 0.98), rgba(16, 27, 37, 0.98));
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+}
+
+.login-card h1 {
+  font-size: clamp(2.2rem, 8vw, 3.4rem);
+}
+
+.role-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 26px 0 18px;
+}
+
+.role-button {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #101923;
+  color: #eef4f7;
+  cursor: pointer;
+  text-align: left;
+  font-weight: 700;
+}
+
+.role-button span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.role-button.selected {
+  border-color: rgba(120, 226, 194, 0.65);
+  background: rgba(47, 119, 101, 0.22);
+  color: #a9edda;
+}
+
+.password-field {
+  display: grid;
+  gap: 8px;
+  color: #cbd6de;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.password-field input {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0c151d;
+  color: #eef4f7;
+  font: inherit;
+}
+
+.password-field input:focus {
+  border-color: rgba(120, 226, 194, 0.65);
+  outline: none;
+}
+
+.login-button,
+.logout-button {
+  width: 100%;
+  margin-top: 18px;
+  padding: 12px 16px;
+  border: 1px solid rgba(120, 226, 194, 0.5);
+  border-radius: 10px;
+  background: rgba(47, 119, 101, 0.28);
+  color: #a9edda;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.app-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  max-width: none;
+}
+
+.account-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-badge {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: #cbd6de;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.logout-button {
+  width: auto;
+  margin-top: 0;
+  background: #1b2a35;
+  color: #dce5eb;
+}
+
 header {
   max-width: 680px;
 }
@@ -347,6 +466,20 @@ footer {
 }
 
 @media (max-width: 640px) {
+  .role-options,
+  .app-header {
+    grid-template-columns: 1fr;
+    flex-direction: column;
+  }
+
+  .account-controls {
+    width: 100%;
+  }
+
+  .logout-button {
+    flex: 1;
+  }
+
   .page {
     width: min(100% - 28px, 480px);
     padding-top: 42px;
