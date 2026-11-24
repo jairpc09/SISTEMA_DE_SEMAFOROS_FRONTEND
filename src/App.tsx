@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type Color = "red" | "yellow" | "green";
 type SemaphoreId = "1" | "2";
@@ -8,8 +8,16 @@ type StateResponse = {
   phase: string;
   detected: Record<SemaphoreId, boolean>;
   semaphores: Record<SemaphoreId, Color>;
+  timing: { all_red_seconds: number };
+  remaining_seconds: number | null;
 };
 type Role = "user" | "admin";
+type HistoryEvent = {
+  id: number;
+  timestamp: string;
+  category: string;
+  message: string;
+};
 
 const API_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000"
@@ -29,6 +37,14 @@ async function getState(): Promise<StateResponse> {
   return response.json() as Promise<StateResponse>;
 }
 
+async function getHistory(): Promise<HistoryEvent[]> {
+  const response = await fetch(`${API_BASE_URL}/api/history`);
+  if (!response.ok) {
+    throw new Error(`No se pudo leer el historial (HTTP ${response.status})`);
+  }
+  return response.json() as Promise<HistoryEvent[]>;
+}
+
 function App() {
   const [role, setRole] = useState<Role | null>(() =>
     sessionStorage.getItem("semaphore-role") === "admin" ||
@@ -42,7 +58,16 @@ function App() {
   const [loginBusy, setLoginBusy] = useState(false);
   const [semaphores, setSemaphores] = useState<StateResponse["semaphores"]>();
   const [mode, setMode] = useState<Mode>();
+  const [phase, setPhase] = useState("");
   const [detected, setDetected] = useState<StateResponse["detected"]>();
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
+  const [redSeconds, setRedSeconds] = useState("1");
+  const redSecondsDirty = useRef(false);
+  const [timingBusy, setTimingBusy] = useState(false);
+  const [history, setHistory] = useState<HistoryEvent[]>([]);
+  const [historyError, setHistoryError] = useState("");
+  const [isConnected, setIsConnected] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<SemaphoreId | null>(null);
   const [modeBusy, setModeBusy] = useState(false);
@@ -52,11 +77,30 @@ function App() {
       const state = await getState();
       setSemaphores(state.semaphores);
       setMode(state.mode);
+      setPhase(state.phase);
       setDetected(state.detected);
+      setRemainingSeconds(state.remaining_seconds ?? null);
+      if (!redSecondsDirty.current) {
+        setRedSeconds(String(state.timing?.all_red_seconds ?? 1));
+      }
+      setIsConnected(true);
+      setLastUpdatedAt(new Date());
       setError("");
     } catch (reason) {
+      setIsConnected(false);
       setError(
         reason instanceof Error ? reason.message : "Error al conectar con la API",
+      );
+    }
+  }, []);
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await getHistory());
+      setHistoryError("");
+    } catch (reason) {
+      setHistoryError(
+        reason instanceof Error ? reason.message : "No se pudo actualizar el historial",
       );
     }
   }, []);
@@ -64,9 +108,14 @@ function App() {
   useEffect(() => {
     if (!role) return;
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 500);
-    return () => window.clearInterval(timer);
-  }, [refresh, role]);
+    void refreshHistory();
+    const stateTimer = window.setInterval(() => void refresh(), 500);
+    const historyTimer = window.setInterval(() => void refreshHistory(), 3000);
+    return () => {
+      window.clearInterval(stateTimer);
+      window.clearInterval(historyTimer);
+    };
+  }, [refresh, refreshHistory, role]);
 
   async function login() {
     setLoginBusy(true);
@@ -114,6 +163,43 @@ function App() {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
+  async function changeRedTime() {
+    const seconds = Number(redSeconds);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 60) {
+      setError("El tiempo en rojo debe ser un número entre 1 y 60 segundos.");
+      return;
+    }
+
+    setTimingBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/timing`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...adminAuthorizationHeader(),
+        },
+        body: JSON.stringify({ all_red_seconds: seconds }),
+      });
+      if (!response.ok) {
+        throw new Error(
+          response.status === 409
+            ? "El tiempo solo se puede ajustar en modo manual."
+            : `No se pudo guardar el tiempo (HTTP ${response.status})`,
+        );
+      }
+      redSecondsDirty.current = false;
+      await refresh();
+      await refreshHistory();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Error al guardar el tiempo",
+      );
+    } finally {
+      setTimingBusy(false);
+    }
+  }
+
   async function changeMode(nextMode: Mode) {
     setModeBusy(true);
     setError("");
@@ -130,6 +216,7 @@ function App() {
         throw new Error(`No se pudo cambiar el modo (HTTP ${response.status})`);
       }
       await refresh();
+      await refreshHistory();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Error al cambiar el modo",
@@ -160,6 +247,7 @@ function App() {
         throw new Error(`No se pudo cambiar el color (HTTP ${response.status})`);
       }
       await refresh();
+      await refreshHistory();
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Error al enviar el cambio",
@@ -250,6 +338,20 @@ function App() {
               : "Vista de consulta: puedes revisar el estado de los semáforos y los sensores."}
           </p>
         </div>
+        <div
+          className={`connection-status ${isConnected ? "connected" : "disconnected"}`}
+          aria-live="polite"
+        >
+          <span className="connection-dot" aria-hidden="true" />
+          <span>
+            <strong>{isConnected ? "Backend conectado" : "Sin conexión"}</strong>
+            <small>
+              {lastUpdatedAt
+                ? `Última actualización: ${lastUpdatedAt.toLocaleTimeString()}`
+                : "Esperando respuesta del backend…"}
+            </small>
+          </span>
+        </div>
         <div className="account-controls">
           <span className="role-badge">{role === "admin" ? "Administrador" : "Usuario"}</span>
           <button className="logout-button" type="button" onClick={logout}>
@@ -270,6 +372,15 @@ function App() {
                 ? "Manual: selecciona los colores. Para cambiar uno a amarillo o verde, el otro debe estar en rojo."
                 : "Conectando con el backend…"}
           </p>
+          {mode === "automatic" && (
+            <p className="countdown" aria-live="polite">
+              {remainingSeconds === null
+                ? phase.startsWith("green_")
+                  ? `Verde extendido en el semáforo ${phase.slice(-1)} mientras detecta un vehículo`
+                  : "Esperando el siguiente cambio…"
+                : `Próximo cambio en ${remainingSeconds} s`}
+            </p>
+          )}
         </div>
         {role === "admin" && (
           <div className="controls">
@@ -290,6 +401,36 @@ function App() {
           </div>
         )}
       </section>
+
+      {role === "admin" && mode === "manual" && (
+        <section className="timing-panel" aria-label="Ajuste de tiempos">
+          <div>
+            <h2>Tiempo de pausa en rojo</h2>
+            <p>Duración, en modo automático, con ambos semáforos en rojo (1–60 s).</p>
+          </div>
+          <label className="timing-control">
+            Segundos
+            <input
+              type="number"
+              min="1"
+              max="60"
+              step="1"
+              value={redSeconds}
+              onChange={(event) => {
+                redSecondsDirty.current = true;
+                setRedSeconds(event.target.value);
+              }}
+            />
+          </label>
+          <button
+            className="button save-timing"
+            disabled={timingBusy || !redSeconds}
+            onClick={() => void changeRedTime()}
+          >
+            {timingBusy ? "Guardando…" : "Guardar tiempo"}
+          </button>
+        </section>
+      )}
 
       <section className="grid" aria-label="Semáforos">
         {(["1", "2"] as const).map((id) => {
@@ -318,38 +459,67 @@ function App() {
                   Sensor: {detected?.[id] ? "vehículo detectado" : "sin detección"}
                 </p>
               )}
-              {role === "admin" && <div className="controls" aria-label={`Cambiar semáforo ${id}`}>
-                {(["red", "yellow", "green"] as const).map((lamp) => {
-                  const blockedByOtherSemaphore =
-                    lamp !== "red" &&
-                    otherColor !== undefined &&
-                    otherColor !== "red";
-                  return (
-                    <button
-                      className={`button ${lamp}`}
-                      disabled={
-                        !semaphores ||
-                        mode !== "manual" ||
-                        busy === id ||
-                        blockedByOtherSemaphore
-                      }
-                      key={lamp}
-                      onClick={() => void changeColor(id, lamp)}
-                      aria-pressed={color === lamp}
-                      title={
-                        blockedByOtherSemaphore
-                          ? `El semáforo ${otherId} debe estar en rojo`
-                          : undefined
-                      }
-                    >
-                      {colorNames[lamp]}
-                    </button>
-                  );
-                })}
-              </div>}
+              {role === "admin" && (
+                <div className="controls" aria-label={`Cambiar semáforo ${id}`}>
+                  {(["red", "yellow", "green"] as const).map((lamp) => {
+                    const blockedByOtherSemaphore =
+                      lamp !== "red" &&
+                      otherColor !== undefined &&
+                      otherColor !== "red";
+                    return (
+                      <button
+                        className={`button ${lamp}`}
+                        disabled={
+                          !semaphores ||
+                          mode !== "manual" ||
+                          busy === id ||
+                          blockedByOtherSemaphore
+                        }
+                        key={lamp}
+                        onClick={() => void changeColor(id, lamp)}
+                        aria-pressed={color === lamp}
+                        title={
+                          blockedByOtherSemaphore
+                            ? `El semáforo ${otherId} debe estar en rojo`
+                            : undefined
+                        }
+                      >
+                        {colorNames[lamp]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </article>
           );
         })}
+      </section>
+      <section className="history-panel" aria-label="Historial de eventos">
+        <div className="history-heading">
+          <div>
+            <h2>Historial de eventos</h2>
+            <p>Últimos cambios de modo, luces y sensores.</p>
+          </div>
+          <span className="history-count">{history.length} eventos</span>
+        </div>
+        {historyError && <p className="history-error" role="status">{historyError}</p>}
+        {history.length === 0 ? (
+          <p className="empty-history">Todavía no hay eventos registrados.</p>
+        ) : (
+          <ol className="history-list">
+            {history.slice(0, 20).map((event) => (
+              <li className="history-item" key={event.id}>
+                <span className={`history-category ${event.category}`}>
+                  {event.category}
+                </span>
+                <span className="history-message">{event.message}</span>
+                <time dateTime={event.timestamp}>
+                  {new Date(event.timestamp).toLocaleTimeString()}
+                </time>
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
       <footer>
         Solo para una maqueta educativa con LEDs; no conectar a señales de tránsito
