@@ -3,6 +3,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 type Color = "red" | "yellow" | "green";
 type SemaphoreId = "1" | "2";
 type Mode = "manual" | "automatic";
+type DetectionStatistics = {
+  total_detections: number;
+  by_semaphore: Record<SemaphoreId, number>;
+};
 type StateResponse = {
   mode: Mode;
   phase: string;
@@ -10,6 +14,7 @@ type StateResponse = {
   semaphores: Record<SemaphoreId, Color>;
   timing: { all_red_seconds: number };
   remaining_seconds: number | null;
+  statistics?: DetectionStatistics;
 };
 type Role = "user" | "admin";
 type HistoryEvent = {
@@ -40,6 +45,11 @@ async function getState(): Promise<StateResponse> {
 async function getHistory(): Promise<HistoryEvent[]> {
   const response = await fetch(`${API_BASE_URL}/api/history`);
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(
+        "El backend de Render necesita actualizarse para habilitar el historial.",
+      );
+    }
     throw new Error(`No se pudo leer el historial (HTTP ${response.status})`);
   }
   return response.json() as Promise<HistoryEvent[]>;
@@ -66,6 +76,9 @@ function App() {
   const [timingBusy, setTimingBusy] = useState(false);
   const [history, setHistory] = useState<HistoryEvent[]>([]);
   const [historyError, setHistoryError] = useState("");
+  const [statistics, setStatistics] = useState<DetectionStatistics | null>(null);
+  const [statisticsAvailable, setStatisticsAvailable] = useState(false);
+  const [showStatistics, setShowStatistics] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [error, setError] = useState("");
@@ -80,6 +93,8 @@ function App() {
       setPhase(state.phase);
       setDetected(state.detected);
       setRemainingSeconds(state.remaining_seconds ?? null);
+      setStatistics(state.statistics ?? null);
+      setStatisticsAvailable(state.statistics !== undefined);
       if (!redSecondsDirty.current) {
         setRedSeconds(String(state.timing?.all_red_seconds ?? 1));
       }
@@ -155,6 +170,7 @@ function App() {
   function logout() {
     sessionStorage.removeItem("semaphore-role");
     sessionStorage.removeItem("semaphore-admin-token");
+    setShowStatistics(false);
     setRole(null);
   }
 
@@ -354,6 +370,17 @@ function App() {
         </div>
         <div className="account-controls">
           <span className="role-badge">{role === "admin" ? "Administrador" : "Usuario"}</span>
+          {role === "admin" && (
+            <button
+              className="statistics-toggle"
+              type="button"
+              aria-expanded={showStatistics}
+              aria-controls="admin-statistics"
+              onClick={() => setShowStatistics((visible) => !visible)}
+            >
+              {showStatistics ? "Ocultar estadísticas" : "Estadísticas"}
+            </button>
+          )}
           <button className="logout-button" type="button" onClick={logout}>
             Cerrar sesión
           </button>
@@ -432,6 +459,39 @@ function App() {
         </section>
       )}
 
+      {role === "admin" && showStatistics && (
+        <section
+          className="statistics-panel"
+          id="admin-statistics"
+          aria-label="Estadísticas de detección"
+        >
+          <div className="statistics-heading">
+            <h2>Estadísticas de detección</h2>
+            <p>Detecciones acumuladas desde el último reinicio del backend.</p>
+          </div>
+          {statisticsAvailable && statistics ? (
+            <div className="statistics-grid">
+              <article className="statistic-card">
+                <span>Total de detecciones</span>
+                <strong>{statistics.total_detections}</strong>
+              </article>
+              <article className="statistic-card">
+                <span>Semáforo 1</span>
+                <strong>{statistics.by_semaphore["1"]}</strong>
+              </article>
+              <article className="statistic-card">
+                <span>Semáforo 2</span>
+                <strong>{statistics.by_semaphore["2"]}</strong>
+              </article>
+            </div>
+          ) : (
+            <p className="statistics-unavailable">
+              Actualiza el backend en Render para consultar estas estadísticas.
+            </p>
+          )}
+        </section>
+      )}
+
       <section className="grid" aria-label="Semáforos">
         {(["1", "2"] as const).map((id) => {
           const color = semaphores?.[id];
@@ -500,12 +560,14 @@ function App() {
             <h2>Historial de eventos</h2>
             <p>Últimos cambios de modo, luces y sensores.</p>
           </div>
-          <span className="history-count">{history.length} eventos</span>
+          <span className="history-count">
+            {historyError ? "No disponible" : `${history.length} eventos`}
+          </span>
         </div>
         {historyError && <p className="history-error" role="status">{historyError}</p>}
-        {history.length === 0 ? (
+        {!historyError && history.length === 0 ? (
           <p className="empty-history">Todavía no hay eventos registrados.</p>
-        ) : (
+        ) : !historyError ? (
           <ol className="history-list">
             {history.slice(0, 20).map((event) => (
               <li className="history-item" key={event.id}>
@@ -519,7 +581,7 @@ function App() {
               </li>
             ))}
           </ol>
-        )}
+        ) : null}
       </section>
       <footer>
         Solo para una maqueta educativa con LEDs; no conectar a señales de tránsito

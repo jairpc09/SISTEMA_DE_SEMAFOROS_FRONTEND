@@ -198,6 +198,23 @@ button:focus-visible {
   color: #dce5eb;
 }
 
+.statistics-toggle {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #1b2a35;
+  color: #dce5eb;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.statistics-toggle:hover {
+  border-color: rgba(120, 226, 194, 0.65);
+  color: #a9edda;
+}
+
 header {
   max-width: 680px;
 }
@@ -300,6 +317,7 @@ h1 {
 }
 
 .timing-panel,
+.statistics-panel,
 .history-panel {
   margin-top: 22px;
   padding: 22px 24px;
@@ -320,17 +338,55 @@ h1 {
 }
 
 .timing-panel h2,
+.statistics-heading h2,
 .history-heading h2 {
   margin-bottom: 6px;
   font-size: 1rem;
 }
 
 .timing-panel p,
+.statistics-heading p,
 .history-heading p {
   margin-bottom: 0;
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.5;
+}
+
+.statistics-heading p {
+  margin-bottom: 0;
+}
+
+.statistics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.statistic-card {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid rgba(165, 190, 204, 0.12);
+  border-radius: 12px;
+  background: rgba(10, 17, 24, 0.45);
+}
+
+.statistic-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.statistic-card strong {
+  color: var(--mint);
+  font-size: 1.6rem;
+}
+
+.statistics-unavailable {
+  margin: 18px 0 0;
+  color: #ffc2c4;
+  font-size: 0.88rem;
 }
 
 .timing-control {
@@ -654,6 +710,7 @@ footer {
 
   .account-controls {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .connection-status {
@@ -675,6 +732,14 @@ footer {
     padding: 19px;
   }
 
+  .statistics-panel {
+    padding: 19px;
+  }
+
+  .statistics-grid {
+    grid-template-columns: 1fr;
+  }
+
   .history-item {
     grid-template-columns: 1fr auto;
   }
@@ -690,6 +755,10 @@ footer {
   }
 
   .logout-button {
+    flex: 1;
+  }
+
+  .statistics-toggle {
     flex: 1;
   }
 

@@ -5,5 +5,7 @@ IoT. React muestra el estado, la conexión con el backend y la hora de la últim
 actualización. Incluye historial de eventos y cuenta regresiva del ciclo
 automático. El administrador puede ajustar la pausa con ambos semáforos en rojo
 (1–60 segundos) desde el modo manual. El ESP32 detecta vehículos a 15 cm o menos.
+En la vista de administrador también se pueden consultar las detecciones
+acumuladas por semáforo desde el último reinicio del backend.
 
 No usar para controlar tráfico real.
